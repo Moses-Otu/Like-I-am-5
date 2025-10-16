@@ -1,0 +1,7 @@
+# Ignore everything
+*
+
+# Allow only these files
+!.gitignore
+!lim5.py
+!.env.example
