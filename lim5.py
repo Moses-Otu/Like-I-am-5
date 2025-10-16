@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 
 # ====================================
-# 1️⃣ SETUP & INITIALIZATION
+# SETUP & INITIALIZATION
 # ====================================
 
 print("🚀 Starting Nigeria Legal AI Assistant...")
@@ -48,7 +48,7 @@ print("✅ Connected to Pinecone index.\n")
 
 
 # ====================================
-# 2️⃣ DOCUMENT EMBEDDING (RUN ONCE)
+# DOCUMENT EMBEDDING (RUN ONCE)
 # ====================================
 def embed_documents():
     print("📚 Starting document embedding process...")
@@ -117,7 +117,7 @@ def embed_documents():
 
 
 # ====================================
-# 3️⃣ RETRIEVAL FUNCTION
+# RETRIEVAL FUNCTION
 # ====================================
 
 def detect_source_type(query):
@@ -165,7 +165,7 @@ def retrieve_from_pinecone(query, top_k=5):
 
 
 # ====================================
-# 4️⃣ GPT ANSWER GENERATION
+# GPT ANSWER GENERATION
 # ====================================
 
 def generate_answer(conversation_prompt, contexts):
@@ -207,7 +207,7 @@ Conversation:
 
 
 # ====================================
-# 5️⃣ TELEGRAM BOT HANDLERS
+# TELEGRAM BOT HANDLERS
 # ====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -265,7 +265,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ====================================
-# 6️⃣ MAIN ENTRY POINT
+# MAIN ENTRY POINT
 # ====================================
 
 def main():
