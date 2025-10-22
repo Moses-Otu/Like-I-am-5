@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 
 # ====================================
-# SETUP & INITIALIZATION
+# 1️⃣ SETUP & INITIALIZATION
 # ====================================
 
 print("🚀 Starting Nigeria Legal AI Assistant...")
@@ -49,7 +49,7 @@ print("✅ Connected to Pinecone index.\n")
 
 
 # ====================================
-# DOCUMENT EMBEDDING (RUN ONCE)
+# 2️⃣ DOCUMENT EMBEDDING (RUN ONCE)
 # ====================================
 def embed_documents():
     print("📚 Starting document embedding process...")
@@ -133,7 +133,57 @@ def embed_documents():
 
 
 # ====================================
-# RETRIEVAL FUNCTION
+# 3️⃣ GREETING DETECTION (NO API CALL)
+# ====================================
+
+def is_greeting(message: str) -> bool:
+    """
+    Detect if the message is a greeting without needing AI
+    """
+    message = message.strip().lower()
+    
+    # Common greetings
+    simple_greetings = [
+        'hello', 'hi', 'hey', 'greetings', 'howdy',
+        'good morning', 'good afternoon', 'good evening',
+        'morning', 'afternoon', 'evening',
+        'hi there', 'hello there', 'hey there',
+        'sup', 'whats up', "what's up", 'yo',
+        'hiya', 'heya', 'hola'
+    ]
+    
+    # Check exact matches
+    if message in simple_greetings:
+        return True
+    
+    # Check if message starts with greeting (e.g., "hi, how are you?")
+    for greeting in simple_greetings:
+        if message.startswith(greeting + ' ') or message.startswith(greeting + ','):
+            return True
+    
+    return False
+
+
+def get_greeting_response() -> str:
+    """
+    Return a friendly greeting response
+    """
+    return (
+        "👋 *Hello! Welcome to the Nigerian Legal AI Assistant*\n\n"
+        "I can help you with questions about:\n"
+        "📜 *The Constitution*\n"
+        "💰 *Tax Acts*\n"
+        "🚗 *Traffic Laws*\n\n"
+        "*Examples:*\n"
+        "• What does the Constitution say about freedom of speech?\n"
+        "• How is income tax calculated?\n"
+        "• What is the penalty for speeding?\n\n"
+        "💬 How can I assist you today?"
+    )
+
+
+# ====================================
+# 4️⃣ RETRIEVAL FUNCTION
 # ====================================
 
 def detect_source_type(query):
@@ -183,7 +233,7 @@ def retrieve_from_pinecone(query, top_k=5):
 
 
 # ====================================
-# GPT ANSWER GENERATION
+# 5️⃣ GPT ANSWER GENERATION
 # ====================================
 
 def generate_answer(conversation_prompt, contexts, user_input):
@@ -276,7 +326,7 @@ Is there anything related to these areas I can help you with?"
 
 
 # ====================================
-# TELEGRAM BOT HANDLERS
+# 6️⃣ TELEGRAM BOT HANDLERS
 # ====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -372,7 +422,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ====================================
-# MAIN ENTRY POINT
+# 7️⃣ MAIN ENTRY POINT
 # ====================================
 
 def main():
