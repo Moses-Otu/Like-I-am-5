@@ -6,6 +6,7 @@ from openai import OpenAI
 from pinecone import Pinecone, ServerlessSpec
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 from dotenv import load_dotenv
 
@@ -54,8 +55,7 @@ def embed_documents():
     print("📚 Starting document embedding process...")
 
     pdf_files = [
-        {"path": r"C:\Users\crypt\Downloads\constitution.pdf", "source_type": "constitution"}, #change path
-        {"path": r"C:\Users\crypt\Downloads\Tax.pdf", "source_type": "tax_law"} #change path
+        {"path": r"C:\Users\crypt\Downloads\Traffic.pdf", "source_type": "Traffic Law"},
     ]
 
     for file in pdf_files:
@@ -64,23 +64,39 @@ def embed_documents():
         print(f"\n🔹 Processing document: {pdf_path}")
         print(f"📘 Source type: {source_type}")
 
-        all_text = ""
+        # --- Semantic Chunking with Table Preservation ---
+        chunks = []
+        total_tables = 0
+        total_text_chunks = 0
+        
         with pdfplumber.open(pdf_path) as pdf:
-            for page in tqdm(pdf.pages, desc=f"Extracting text from {source_type}"):
+            for page_num, page in enumerate(tqdm(pdf.pages, desc=f"Processing {source_type} pages")):
+                # Extract tables as complete units
+                tables = page.extract_tables()
+                for i, table in enumerate(tables):
+                    if table and any(any(cell is not None for cell in row) for row in table):
+                        table_chunk = f"TABLE Page {page_num+1}:\n"
+                        for row in table:
+                            # Filter out None values and convert to strings
+                            row_data = [str(cell) if cell is not None else "" for cell in row]
+                            table_chunk += " | ".join(row_data) + "\n"
+                        chunks.append(table_chunk)
+                        total_tables += 1
+                
+                # Extract and chunk text semantically
                 text = page.extract_text()
-                if text:
-                    all_text += text + "\n\n"
+                if text and text.strip():
+                    text_splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=1000,
+                        chunk_overlap=100,
+                        separators=["\n\n", "\n", ". ", "! ", "? ", " ", ""]
+                    )
+                    text_chunks = text_splitter.split_text(text)
+                    chunks.extend(text_chunks)
+                    total_text_chunks += len(text_chunks)
 
-        print(f"📝 Total text length: {len(all_text)} characters")
-
-        # --- Chunking ---
-        def chunk_text(text, max_words=1500):
-            words = text.split()
-            for i in range(0, len(words), max_words):
-                yield " ".join(words[i:i + max_words])
-
-        chunks = list(chunk_text(all_text))
-        print(f"📑 Created {len(chunks)} chunks for {source_type}")
+        print(f"📝 Created {len(chunks)} total chunks for {source_type}")
+        print(f"📊 Breakdown: {total_tables} table chunks + {total_text_chunks} text chunks")
 
         # --- Embedding & Upserting ---
         batch_size = 50
@@ -129,6 +145,8 @@ def detect_source_type(query):
         return "constitution"
     elif "labour" in q or "employee" in q or "work" in q or "employer" in q:
         return "labour_law"
+    elif "traffic" in q or "road" in q or "driving" in q or "vehicle" in q:
+        return "Traffic Law"
     else:
         return None
 
@@ -168,33 +186,85 @@ def retrieve_from_pinecone(query, top_k=5):
 # GPT ANSWER GENERATION
 # ====================================
 
-def generate_answer(conversation_prompt, contexts):
+def generate_answer(conversation_prompt, contexts, user_input):
     print("\n🧠 Step 3: Generating GPT response with memory...")
     context_text = "\n\n".join(contexts)
     print(f"🧾 Context length: {len(context_text)} characters")
 
     prompt = f"""
+# SYSTEM PROMPT
 You are an AI Legal Assistant specialized in Nigerian laws, including:
 - The Constitution
 - The Tax Acts
-- The Labour Laws
+- The Traffic Laws
 
 You remember the ongoing conversation. Continue naturally and maintain context.
-
 If you cannot find an answer in the provided documents, say:
-"I couldn’t find an exact match in the provided documents."
+"I couldn't find an exact match in the provided documents."
 
-Context:
+IMPORTANT: Always format your responses clearly:
+- Use clear paragraphs
+- Use bullet points when listing multiple items
+- Bold important terms using *text* for Telegram markdown
+- Always cite sources at the end with source type, section numbers, and page numbers
+
+# CONTEXT
 {context_text}
 
-Conversation:
+# CONVERSATION HISTORY
 {conversation_prompt}
+
+# USER PROMPT
+{user_input}
+
+# EXAMPLES
+Example 1:
+User: "What is the penalty for speeding?"
+AI: "According to the Traffic Law, the penalty for speeding varies based on the offense:
+
+- *First-time offenders*: Fine of ₦10,000
+- *Repeat offenders*: Fine of ₦20,000 or imprisonment
+
+📚 *Source:* Traffic Law, Section 15, Page 23"
+
+Example 2:
+User: "What are my constitutional rights?"
+AI: "The Nigerian Constitution guarantees several *fundamental rights* in Chapter IV, including:
+
+- *Right to life* (Section 33)
+- *Right to dignity* (Section 34)
+- *Right to fair hearing* (Section 36)
+- *Freedom of expression* (Section 39)
+
+These rights protect citizens from unlawful treatment and ensure justice.
+
+📚 *Source:* Constitution of Nigeria, Chapter IV, Sections 33-46"
+
+Example 3:
+User: "How is income tax calculated?"
+AI: "Income tax in Nigeria is calculated using *progressive tax rates* based on your annual income:
+
+- First ₦300,000: 7%
+- Next ₦300,000: 11%
+- Next ₦500,000: 15%
+- Next ₦500,000: 19%
+- Above ₦1,600,000: 24%
+
+For example, if you earn ₦80,000 monthly (₦960,000 annually), your tax would be calculated across multiple brackets.
+
+📚 *Source:* Personal Income Tax Act, Section 33, Page 45"
+
+Example 4:
+User: "What about space law?"
+AI: "I couldn't find an exact match in the provided documents about space law. I specialize in Nigerian *constitutional law*, *tax law*, and *traffic law*.
+
+Is there anything related to these areas I can help you with?"
 """
 
     response = openai_client.chat.completions.create(
-        model="gpt-4.1",
+        model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful Nigerian legal assistant with conversational memory."},
+            {"role": "system", "content": "You are a helpful Nigerian legal assistant with conversational memory. Always format responses clearly with markdown."},
             {"role": "user", "content": prompt}
         ],
         temperature=0.3,
@@ -205,24 +275,48 @@ Conversation:
     return response.choices[0].message.content
 
 
-
 # ====================================
 # TELEGRAM BOT HANDLERS
 # ====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("👋 User started the bot.")
-    await update.message.reply_text(
-        "🧾 Welcome to the Nigeria Legal AI Assistant!\n\n"
-        "Ask me about Nigerian laws like the Constitution, Tax Act, or Labour Act.\n\n"
-        "Examples:\n"
+    chat_id = update.effective_chat.id
+    
+    # Clear chat memory on start
+    if chat_id in chat_memory:
+        chat_memory[chat_id] = []
+    
+    welcome_message = (
+        "🧾 *Welcome to the Nigerian Legal AI Assistant!*\n\n"
+        "I can help you understand Nigerian laws including:\n"
+        "📜 The Constitution\n"
+        "💰 Tax Acts\n"
+        "🚗 Traffic Laws\n\n"
+        "*Examples:*\n"
         "• What does the Constitution say about freedom of speech?\n"
         "• How much tax will I pay if I earn ₦80,000?\n"
-        "• Can my employer fire me without notice?"
+        "• What is the penalty for overspeeding?\n\n"
+        "💬 Ask me anything about Nigerian laws!\n"
+        "🔄 Use /clear to reset our conversation"
+    )
+    
+    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+
+
+async def clear_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Clear conversation history"""
+    chat_id = update.effective_chat.id
+    if chat_id in chat_memory:
+        chat_memory[chat_id] = []
+    print(f"🔄 Cleared chat memory for user {chat_id}")
+    await update.message.reply_text(
+        "✅ *Conversation history cleared!*\n\nYou can start a fresh conversation now.",
+        parse_mode='Markdown'
     )
 
 
-    # --- Simple in-memory session storage ---
+# --- Simple in-memory session storage ---
 chat_memory = {}
 MAX_MEMORY = 5  # store 5 turns per user
 
@@ -232,7 +326,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     print(f"\n💬 New user query from {chat_id}: {user_query}")
 
-    await update.message.reply_text("🔍 Searching legal documents...")
+    # ✅ CHECK FOR GREETINGS FIRST (NO API CALL)
+    if is_greeting(user_query):
+        greeting_response = get_greeting_response()
+        await update.message.reply_text(greeting_response, parse_mode='Markdown')
+        print("👋 Greeting detected - responded without API call")
+        return
+
+    # Show typing indicator
+    await update.message.chat.send_action(action="typing")
+    await update.message.reply_text("🔍 *Searching legal documents...*", parse_mode='Markdown')
 
     try:
         # Retrieve previous chat memory (if any)
@@ -250,18 +353,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         full_prompt += f"User: {user_query}"
 
         # Generate answer
-        answer = generate_answer(full_prompt, contexts)
+        answer = generate_answer(full_prompt, contexts, user_query)
 
         # Save this interaction
         conversation_history.append({"user": user_query, "bot": answer})
         chat_memory[chat_id] = conversation_history[-MAX_MEMORY:]
 
-        wrapped = textwrap.fill(answer, width=90)
-        await update.message.reply_text(f"🤖 {wrapped}")
+        # Send formatted response
+        await update.message.reply_text(answer, parse_mode='Markdown')
+        print("✅ Response sent successfully!")
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        await update.message.reply_text("⚠️ Sorry, something went wrong.")
+        await update.message.reply_text(
+            "⚠️ *Sorry, something went wrong.*\n\nPlease try again or rephrase your question.",
+            parse_mode='Markdown'
+        )
 
 
 # ====================================
@@ -273,6 +380,7 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("clear", clear_chat))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("✅ Bot is running. Waiting for user messages...")
